@@ -18,15 +18,13 @@ import ActionPanel from "../components/ActionPanel";
 import Chat from "../components/Chat";
 import AudioChat from "../components/AudioChat";
 
-console.log("Connecting to SOCKET_URL:", SOCKET_URL);
-
+// console.log("Connecting to SOCKET_URL:", SOCKET_URL);
 const socket = io(SOCKET_URL);
 
 function Home() {
   const { gameId: urlGameId } = useParams();
   const navigate = useNavigate();
   const [gameId, setGameId] = useState(urlGameId || "");
-  console.log("urlGameId:", urlGameId, "gameId:", gameId);
   const [playerName, setPlayerName] = useState("");
   const [game, setGame] = useState(null);
   const [message, setMessage] = useState("");
@@ -45,24 +43,22 @@ function Home() {
   const [killedByMafia, setKilledByMafia] = useState(null);
   const [gameOverMafiaReveal, setGameOverMafiaReveal] = useState(null);
 
-  // Join room if URL contains gameId
+  // FIX: Sync gameId with joinRoom
   useEffect(() => {
-    if (urlGameId && !hasJoined) {
-      console.log("Emitting joinRoom for gameId:", urlGameId);
-      socket.emit("joinRoom", { gameId: urlGameId });
+    if (gameId && !hasJoined) {
+      // console.log("Emitting joinRoom for gameId:", gameId);
+      socket.emit("joinRoom", { gameId });
     }
-  }, [urlGameId, hasJoined]);
+  }, [gameId, hasJoined]);
 
-  // Socket event listeners
+  // FIX: Split Socket.IO listeners for better performance
   useEffect(() => {
-    const listeners = {
+    const gameListeners = {
       gameUpdated: (data) => {
-        console.log(data);
-
+        // console.log("Game updated:", data);
         setGame(data);
         if (data.currentPhase === "day") {
           const counts = {};
-          // Safely handle players array
           (data.players || []).forEach((p) => (counts[p.name] = 0));
           const votes = data.votes || {};
           Object.values(votes).forEach((target) => {
@@ -75,7 +71,7 @@ function Home() {
           }
         } else {
           setVoteCounts({});
-          setAudioActive(false);
+          // Removed setAudioActive(false) here; rely on audioStopped
         }
         if (data.currentPhase === "nightMafia") setHasMafiaVoted(false);
         if (data.currentPhase === "day") setHasDayVoted(false);
@@ -127,8 +123,7 @@ function Home() {
             setKilledByMafia(lastKilled);
             setPhaseAnimation(
               <div className="text-5xl font-extrabold text-transparent animate-fade-in-out bg-gradient-to-r from-red-600 to-red-800 bg-clip-text">
-                City wakes up with a death of {lastKilled} (now it’s time for
-                discussion)
+                City wakes up with a death of {lastKilled} (now it’s time for discussion)
               </div>
             );
             setTimeout(() => setKilledByMafia(null), 3000);
@@ -148,41 +143,31 @@ function Home() {
         setGame((prev) => ({ ...prev, state: "finished" }));
         setTimeout(() => {
           setPhaseAnimation(null);
-          setGameOverMafiaReveal(mafiaGang); // Trigger mafia reveal animation
-          setTimeout(() => setGameOverMafiaReveal(null), 5000); // Clear after 5s
+          setGameOverMafiaReveal(mafiaGang);
+          setTimeout(() => setGameOverMafiaReveal(null), 5000);
         }, 3000);
       },
       error: ({ message }) => setMessage(`Error: ${message}`),
-      investigationResult: ({ target, result }) => {
-        if (
-          game?.players.find((p) => p.name === playerName)?.role === "Detective"
-        ) {
-          setMessage(
-            <span
-              className={result === "+ve" ? "text-red-400" : "text-green-400"}
-            >
-              Investigation: {target} is{" "}
-              {result === "+ve" ? "Mafia" : "Not Mafia"}
-            </span>
-          );
-        }
-      },
+    };
+
+    const audioListeners = {
       audioStarted: () => {
-        console.log("Audio started event received"); // Debug
+        // console.log("Audio started event received");
         setAudioActive(true);
       },
       audioStopped: () => {
-        console.log("Audio stopped event received");
-        setAudioActive(false); // Add this
+        // console.log("Audio stopped event received");
+        setAudioActive(false);
       },
+    };
+
+    const voteListeners = {
       mafiaVoteCast: ({ voter, target }) => {
         if (role === "Mafia" || role === "Godfather") {
           setMafiaVotes((prev) => ({ ...prev, [voter]: target }));
           const voterRole = game.players.find((p) => p.name === voter)?.role;
           setMessage(
-            `${
-              voterRole === "Godfather" ? "[Godfather]" : "[Mafia]"
-            } ${voter} voted to kill ${target}`
+            `${voterRole === "Godfather" ? "[Godfather]" : "[Mafia]"} ${voter} voted to kill ${target}`
           );
         }
       },
@@ -190,12 +175,26 @@ function Home() {
         setPhaseAnimation(`${eliminated} was lynched by majority vote`);
         setTimeout(() => setPhaseAnimation(null), 3000);
       },
+      investigationResult: ({ target, result }) => {
+        if (game?.players.find((p) => p.name === playerName)?.role === "Detective") {
+          setMessage(
+            <span className={result === "+ve" ? "text-red-400" : "text-green-400"}>
+              Investigation: {target} is {result === "+ve" ? "Mafia" : "Not Mafia"}
+            </span>
+          );
+        }
+      },
     };
 
-    Object.entries(listeners).forEach(([event, handler]) =>
-      socket.on(event, handler)
-    );
-    return () => Object.keys(listeners).forEach((event) => socket.off(event));
+    Object.entries(gameListeners).forEach(([event, handler]) => socket.on(event, handler));
+    Object.entries(audioListeners).forEach(([event, handler]) => socket.on(event, handler));
+    Object.entries(voteListeners).forEach(([event, handler]) => socket.on(event, handler));
+
+    return () => {
+      Object.keys(gameListeners).forEach((event) => socket.off(event));
+      Object.keys(audioListeners).forEach((event) => socket.off(event));
+      Object.keys(voteListeners).forEach((event) => socket.off(event));
+    };
   }, [playerName, role, game]);
 
   // Role and mafia gang assignment
@@ -537,18 +536,16 @@ function Home() {
                 className="w-full flex-1"
               />
 
-              {audioActive && game.currentPhase === "day" && (
-                <AudioChat
-                  socket={socket}
-                  gameId={gameId}
-                  playerName={playerName}
-                  game={game}
-                  isAlive={
-                    game.players.find((p) => p.name === playerName)?.isAlive
-                  }
-                  className="w-full"
-                />
-              )}
+{audioActive && game.currentPhase === "day" && (
+        <AudioChat
+          socket={socket}
+          gameId={gameId}
+          playerName={playerName}
+          game={game}
+          isAlive={game.players.find((p) => p.name === playerName)?.isAlive}
+          className="w-full"
+        />
+      )}
             </div>
           </div>
         )}
