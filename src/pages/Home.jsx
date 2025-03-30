@@ -354,7 +354,7 @@ function Home() {
             <div className="flex items-center justify-center gap-4">
               {/* WhatsApp Share Button */}
               <a
-                href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://your-localtunnel-url.loca.lt/${gameId}`}
+                href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://vercel.com/rams-words-projects/mafia-v01-client/${gameId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition w-full sm:w-auto"
@@ -395,7 +395,7 @@ function Home() {
                 <div className="flex justify-between gap-2 sm:gap-4 mt-2 sm:mt-4 w-full">
                  {/* WhatsApp Share Button */}
               <a
-                href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://your-localtunnel-url.loca.lt/${gameId}`}
+                href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://vercel.com/rams-words-projects/mafia-v01-client/${gameId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition sm:w-auto"
