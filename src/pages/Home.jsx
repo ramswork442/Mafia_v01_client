@@ -18,7 +18,6 @@ import ActionPanel from "../components/ActionPanel";
 import Chat from "../components/Chat";
 import AudioChat from "../components/AudioChat";
 
-// console.log("Connecting to SOCKET_URL:", SOCKET_URL);
 const socket = io(SOCKET_URL);
 
 function Home() {
@@ -42,21 +41,21 @@ function Home() {
   const [mafiaVotes, setMafiaVotes] = useState({});
   const [killedByMafia, setKilledByMafia] = useState(null);
   const [gameOverMafiaReveal, setGameOverMafiaReveal] = useState(null);
+  const [playerId, setPlayerId] = useState(null);
 
-  // FIX: Sync gameId with joinRoom
+  // Sync gameId with joinRoom
   useEffect(() => {
     if (gameId && !hasJoined) {
-      // console.log("Emitting joinRoom for gameId:", gameId);
       socket.emit("joinRoom", { gameId });
     }
   }, [gameId, hasJoined]);
 
-  // FIX: Split Socket.IO listeners for better performance
+  // Game-related socket listeners
   useEffect(() => {
     const gameListeners = {
       gameUpdated: (data) => {
-        // console.log("Game updated:", data);
         setGame(data);
+        // console.log('Game updated for', playerName, ': phase=', data.currentPhase, ', players=', data.players);
         if (data.currentPhase === "day") {
           const counts = {};
           (data.players || []).forEach((p) => (counts[p.name] = 0));
@@ -71,7 +70,6 @@ function Home() {
           }
         } else {
           setVoteCounts({});
-          // Removed setAudioActive(false) here; rely on audioStopped
         }
         if (data.currentPhase === "nightMafia") setHasMafiaVoted(false);
         if (data.currentPhase === "day") setHasDayVoted(false);
@@ -150,17 +148,6 @@ function Home() {
       error: ({ message }) => setMessage(`Error: ${message}`),
     };
 
-    const audioListeners = {
-      audioStarted: () => {
-        // console.log("Audio started event received");
-        setAudioActive(true);
-      },
-      audioStopped: () => {
-        // console.log("Audio stopped event received");
-        setAudioActive(false);
-      },
-    };
-
     const voteListeners = {
       mafiaVoteCast: ({ voter, target }) => {
         if (role === "Mafia" || role === "Godfather") {
@@ -187,27 +174,45 @@ function Home() {
     };
 
     Object.entries(gameListeners).forEach(([event, handler]) => socket.on(event, handler));
-    Object.entries(audioListeners).forEach(([event, handler]) => socket.on(event, handler));
     Object.entries(voteListeners).forEach(([event, handler]) => socket.on(event, handler));
 
     return () => {
       Object.keys(gameListeners).forEach((event) => socket.off(event));
-      Object.keys(audioListeners).forEach((event) => socket.off(event));
       Object.keys(voteListeners).forEach((event) => socket.off(event));
     };
   }, [playerName, role, game]);
 
+  // Audio-specific socket listeners
+  useEffect(() => {
+    const audioListeners = {
+      audioStarted: () => {
+        // console.log("Audio started event received for", playerName);
+        setAudioActive(true);
+      },
+      audioStopped: () => {
+        // console.log("Audio stopped event received for", playerName);
+        setAudioActive(false);
+      },
+    };
+
+    Object.entries(audioListeners).forEach(([event, handler]) => socket.on(event, handler));
+
+    return () => {
+      Object.keys(audioListeners).forEach((event) => socket.off(event));
+    };
+  }, [playerName]); // Stable dependency, reduces re-runs
+
   // Role and mafia gang assignment
   useEffect(() => {
-    socket.on(`privateRole`, ({ role }) => setRole(role));
-    socket.on(`mafiaGang`, (gang) => setMafiaGang(gang));
+    socket.on("privateRole", ({ role }) => setRole(role));
+    socket.on("mafiaGang", (gang) => setMafiaGang(gang));
     return () => {
-      socket.off(`privateRole`);
-      socket.off(`mafiaGang`);
+      socket.off("privateRole");
+      socket.off("mafiaGang");
     };
   }, []);
 
-  // 10-second countdown for game start
+  // Countdown timer
   useEffect(() => {
     const timer =
       startCountdown > 0 &&
@@ -233,9 +238,17 @@ function Home() {
     if (!playerName) return setMessage("Enter your name");
     try {
       await joinGame(gameId, playerName);
-      socket.emit("joinGame", { gameId, playerName });
+      socket.emit("joinGame", { gameId, playerName }, (response) => {
+        if (response && response.playerId) {
+          setPlayerId(response.playerId);
+          setHasJoined(true);
+          // console.log(`Player ${playerName} joined with playerId: ${response.playerId}`);
+        } else {
+          console.error('No playerId in response:', response);
+          setMessage('Error: No player ID received from server');
+        }
+      });
       setMessage(`Joined ${gameId} as ${playerName}`);
-      setHasJoined(true);
     } catch {
       setMessage("Error joining game");
     }
@@ -271,9 +284,7 @@ function Home() {
       await investigate(gameId, playerName, selectedTarget);
       setSelectedTarget("");
     } catch (err) {
-      setMessage(
-        `Error investigating: ${err.response?.data?.msg || "Unknown error"}`
-      );
+      setMessage(`Error investigating: ${err.response?.data?.msg || "Unknown error"}`);
     }
   };
 
@@ -301,6 +312,9 @@ function Home() {
     }
   };
 
+  const currentPlayer = game?.players.find((p) => p.name === playerName);
+  const isAlive = currentPlayer?.isAlive || false;
+
   return (
     <div
       className={`min-h-screen w-full flex flex-col transition-all duration-500 ${
@@ -316,29 +330,16 @@ function Home() {
 
         {/* Initial Room Creation/Join Section */}
         {!gameId && !game && (
-        <div className="h-[80vh] flex flex-col justify-center">
-          <div className="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-xl h-[]">
-            <button
-              onClick={handleCreateGame}
-              className="bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition text-sm sm:text-base w-full"
-            >
-              Create Room
-            </button>
-            {/* <input
-              value={gameId}
-              onChange={(e) => setGameId(e.target.value)}
-              placeholder="Enter Room ID"
-              className="p-2 bg-gray-700 text-white rounded-lg focus:ring-2 focus:ring-red-500 text-sm sm:text-base w-full"
-            />
-            <button
-              onClick={() => navigate(`/${gameId}`)}
-              disabled={!gameId}
-              className="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition disabled:bg-gray-500 text-sm sm:text-base"
-            >
-              Join Room
-            </button> */}
+          <div className="h-[80vh] flex flex-col justify-center">
+            <div className="bg-gray-800 p-4 sm:p-6 rounded-xl shadow-xl">
+              <button
+                onClick={handleCreateGame}
+                className="bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition text-sm sm:text-base w-full"
+              >
+                Create Room
+              </button>
+            </div>
           </div>
-        </div>
         )}
 
         {/* Player Name Entry Section */}
@@ -351,7 +352,6 @@ function Home() {
               className="w-full p-4 bg-gray-700 text-white rounded-lg mb-4 focus:ring-2 focus:ring-green-500 text-sm sm:text-base"
             />
             <div className="flex items-center justify-center gap-4">
-              {/* WhatsApp Share Button */}
               <a
                 href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://mafia-v01-client.vercel.app/${gameId}`}
                 target="_blank"
@@ -360,8 +360,6 @@ function Home() {
               >
                 <FaWhatsapp size={20} /> Share on WhatsApp
               </a>
-
-              {/* Enter Game Button */}
               <button
                 onClick={handleJoinGame}
                 disabled={!playerName}
@@ -392,29 +390,25 @@ function Home() {
               </p>
               {game.state === "waiting" && (
                 <div className="flex justify-between gap-2 sm:gap-4 mt-2 sm:mt-4 w-full">
-                 {/* WhatsApp Share Button */}
-              <a
-                href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://mafia-v01-client.vercel.app/${gameId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition sm:w-auto"
-              >
-                <FaWhatsapp size={20} /> Share on WhatsApp
-              </a>
+                  <a
+                    href={`https://api.whatsapp.com/send?text=Join%20the%20game:%20https://mafia-v01-client.vercel.app/${gameId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition sm:w-auto"
+                  >
+                    <FaWhatsapp size={20} /> Share on WhatsApp
+                  </a>
                   <button
                     onClick={handleToggleReady}
                     disabled={startCountdown !== null}
                     className={`py-1 px-2 sm:py-2 sm:px-4 rounded-lg text-white transition text-sm ${
                       startCountdown !== null
                         ? "bg-gray-600 cursor-not-allowed"
-                        : game.players.find((p) => p.name === playerName)
-                            ?.isReady
+                        : game.players.find((p) => p.name === playerName)?.isReady
                         ? "bg-red-600 hover:bg-red-700"
                         : "bg-yellow-600 hover:bg-yellow-700"
                     }`}
-                    title={
-                      startCountdown !== null ? "Locked during countdown" : ""
-                    }
+                    title={startCountdown !== null ? "Locked during countdown" : ""}
                   >
                     {game.players.find((p) => p.name === playerName)?.isReady
                       ? "Unready"
@@ -476,10 +470,8 @@ function Home() {
                 className="w-full"
               />
 
-              {(game.currentPhase === "nightMafia" &&
-                (role === "Mafia" || role === "Godfather")) ||
-              (game.currentPhase === "nightDetective" &&
-                role === "Detective") ||
+              {(game.currentPhase === "nightMafia" && (role === "Mafia" || role === "Godfather")) ||
+              (game.currentPhase === "nightDetective" && role === "Detective") ||
               (game.currentPhase === "nightDoctor" && role === "Doctor") ||
               game.currentPhase === "day" ? (
                 <ActionPanel
@@ -498,28 +490,20 @@ function Home() {
                 />
               ) : null}
 
-              {game.currentPhase === "nightMafia" &&
-                (role === "Mafia" || role === "Godfather") && (
-                  <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-xl border border-gray-700 w-full">
-                    <h3 className="text-lg sm:text-xl font-bold mb-2 text-white">
-                      Mafia Votes:
-                    </h3>
-                    {Object.entries(mafiaVotes).map(([voter, target]) => (
-                      <div
-                        key={voter}
-                        className="text-sm sm:text-lg text-white"
-                      >
-                        {voter} → {target}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {game.currentPhase === "nightMafia" && (role === "Mafia" || role === "Godfather") && (
+                <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-xl border border-gray-700 w-full">
+                  <h3 className="text-lg sm:text-xl font-bold mb-2 text-white">Mafia Votes:</h3>
+                  {Object.entries(mafiaVotes).map(([voter, target]) => (
+                    <div key={voter} className="text-sm sm:text-lg text-white">
+                      {voter} → {target}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {game.currentPhase === "day" && (
                 <div className="bg-gray-800 p-3 sm:p-4 rounded-xl shadow-xl border border-gray-700 w-full">
-                  <h3 className="text-lg sm:text-xl font-bold mb-2 text-white">
-                    Current Votes:
-                  </h3>
+                  <h3 className="text-lg sm:text-xl font-bold mb-2 text-white">Current Votes:</h3>
                   {Object.entries(voteCounts).map(([name, count]) => (
                     <div key={name} className="text-sm sm:text-lg text-white">
                       {name}: {count} votes
@@ -536,16 +520,17 @@ function Home() {
                 className="w-full flex-1"
               />
 
-{audioActive && game.currentPhase === "day" && (
-        <AudioChat
-          socket={socket}
-          gameId={gameId}
-          playerName={playerName}
-          game={game}
-          isAlive={game.players.find((p) => p.name === playerName)?.isAlive}
-          className="w-full"
-        />
-      )}
+              {game.currentPhase === "day" && (
+                <AudioChat
+                  socket={socket}
+                  gameId={gameId}
+                  playerName={playerName}
+                  game={game}
+                  isAlive={isAlive}
+                  playerId={playerId}
+                  className="w-full"
+                />
+              )}
             </div>
           </div>
         )}
