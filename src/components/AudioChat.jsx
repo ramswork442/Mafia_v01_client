@@ -348,7 +348,10 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
       audio.autoplay = true;
       audio.volume = 1.0;
       document.body.appendChild(audio);
-     console.log(`Remote audio setup: muted=${audio.muted}, volume=${audio.volume}, paused=${audio.paused}, srcObject tracks=${remoteStream.getTracks().length}`);
+      audio.play()
+      .then(() => console.log(`Audio ${consumer.id} manually played for ${playerName}`))
+      .catch((e) => console.error(`Manual play failed for ${consumer.id}:`, e));
+    console.log(`Remote audio setup: muted=${audio.muted}, volume=${audio.volume}, paused=${audio.paused}, srcObject tracks=${remoteStream.getTracks().length}`);
 
     audio.onplay = () => console.log(`Audio ${consumer.id} started playing for ${playerName}`);
     audio.onerror = (e) => console.error(`Audio ${consumer.id} error for ${playerName}:`, e);
