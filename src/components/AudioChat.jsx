@@ -146,11 +146,11 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
 
   const initAudio = async () => {
     if (audioInitialized || !isAlive || game.currentPhase !== 'day') {
-      // console.log(`Audio init skipped for ${playerName}: alreadyInitialized=${audioInitialized}, isAlive=${isAlive}, phase=${game.currentPhase}`);
+      console.log(`Audio init skipped for ${playerName}: alreadyInitialized=${audioInitialized}, isAlive=${isAlive}, phase=${game.currentPhase}`);
       return;
     }
 
-    // console.log(`Initializing audio for ${playerName} (${playerId})`);
+    console.log(`Initializing audio for ${playerName} (${playerId})`);
     let stream;
 
     try {
@@ -160,7 +160,7 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
       }
 
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // console.log(`Mic track enabled: ${stream.getAudioTracks()[0].enabled}`);
+      console.log(`Mic track enabled: ${stream.getAudioTracks()[0].enabled}`);
       if (audioRef.current) {
         audioRef.current.srcObject = stream;
         audioRef.current.muted = true;
@@ -175,7 +175,7 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
       source.connect(analyser);
       localAnalyserRef.current = analyser;
       setAnalyserReady(true);
-      // console.log(`Analyser setup for ${playerName}: ready=${true}, analyser=${analyser ? 'exists' : 'null'}`);
+      console.log(`Analyser setup for ${playerName}: ready=${true}, analyser=${analyser ? 'exists' : 'null'}`);
 
       socket.emit('joinAudio', { gameId });
 
@@ -189,20 +189,20 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
           socket.emit('createTransport', { gameId, direction: 'send' }, resolve);
         });
         if (sendParams.error) throw new Error(`Send transport error: ${sendParams.error}`);
-        // console.log(`Send transport created: ${sendParams.id} for ${playerName}`);
+        console.log(`Send transport created: ${sendParams.id} for ${playerName}`);
 
         const sendTransport = deviceRef.current.createSendTransport(sendParams);
         sendTransportRef.current = sendTransport;
 
         sendTransport.on('connect', async ({ dtlsParameters }, callback) => {
-          // console.log(`Connecting send transport ${sendParams.id} for ${playerName}`);
+          console.log(`Connecting send transport ${sendParams.id} for ${playerName}`);
           await new Promise((resolve) => {
             socket.emit('connectTransport', { gameId, transportId: sendParams.id, dtlsParameters }, (response) => {
               if (response?.error) {
                 console.error('Connect transport error:', response.error);
                 resolve(false);
               } else {
-                // console.log(`Send transport ${sendParams.id} connected for ${playerName}`);
+                console.log(`Send transport ${sendParams.id} connected for ${playerName}`);
                 resolve(true);
               }
             });
@@ -218,7 +218,7 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
                 console.error('Produce error:', response.error);
                 resolve(null);
               } else {
-                // console.log(`Producer ID received: ${response.id} for ${playerName}`);
+                console.log(`Producer ID received: ${response.id} for ${playerName}`);
                 resolve(response.id);
               }
             });
@@ -227,9 +227,9 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
         });
 
         sendTransport.on('connectionstatechange', (state) => {
-          // console.log(`Send transport state for ${playerName}: ${state}`);
+          console.log(`Send transport state for ${playerName}: ${state}`);
           if (state === 'connected') {
-            // console.log(`Send transport ${sendParams.id} is connected, producers: ${producers.length}`);
+            console.log(`Send transport ${sendParams.id} is connected, producers: ${producers.length}`);
           }
         });
 
@@ -284,7 +284,7 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
 
       setAudioInitialized(true);
       setIsContextActive(true);
-      // console.log(`Audio initialized for ${playerName}, contextActive=${true}`);
+      console.log(`Audio initialized for ${playerName}, contextActive=${true}`);
     } catch (err) {
       console.error(`Audio initialization failed for ${playerName}:`, err);
       if (err.name === 'NotAllowedError') setPermissionDenied(true);
@@ -315,16 +315,16 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
 
   const consumeProducer = async (producerId) => {
     if (!recvTransportRef.current || !deviceRef.current) {
-      // console.log(`Recv transport or device not ready for ${playerName}, cannot consume ${producerId}`);
+      console.log(`Recv transport or device not ready for ${playerName}, cannot consume ${producerId}`);
       return;
     }
     if (consumers.some(({ consumer }) => consumer.producerId === producerId)) {
-      // console.log(`Already consuming producer ${producerId} for ${playerName}`);
+      console.log(`Already consuming producer ${producerId} for ${playerName}`);
       return;
     }
 
     try {
-      // console.log(`Consuming producer ${producerId} for ${playerName}`);
+      console.log(`Consuming producer ${producerId} for ${playerName}`);
       const consumerParams = await new Promise((resolve) => {
         socket.emit('consume', {
           gameId,
@@ -335,11 +335,12 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
       });
 
       if (consumerParams.error) throw new Error(`Consume failed: ${consumerParams.error}`);
-      // console.log(`Consumer params received for ${playerName}:`, consumerParams);
+      console.log(`Consumer params received for ${playerName}:`, consumerParams);
 
       const consumer = await recvTransportRef.current.consume(consumerParams);
       await consumer.resume();
-      // console.log(`Consumer created: ${consumer.id} for ${playerName}, consuming ${producerId}`);
+      console.log(`Consumer created: ${consumer.id} for ${playerName}, consuming ${producerId}`);
+    console.log(`Consumer track state: enabled=${consumer.track.enabled}, muted=${consumer.track.muted}`);
 
       const remoteStream = new MediaStream([consumer.track]);
       const audio = document.createElement('audio');
@@ -347,12 +348,15 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
       audio.autoplay = true;
       audio.volume = 1.0;
       document.body.appendChild(audio);
-      // console.log(audio.muted)
+     console.log(`Remote audio setup: muted=${audio.muted}, volume=${audio.volume}, paused=${audio.paused}, srcObject tracks=${remoteStream.getTracks().length}`);
+
+    audio.onplay = () => console.log(`Audio ${consumer.id} started playing for ${playerName}`);
+    audio.onerror = (e) => console.error(`Audio ${consumer.id} error for ${playerName}:`, e);
 
       setConsumers((prev) => [...prev, { consumer, audio }]);
 
       consumer.on('transportclose', () => {
-        // console.log(`Consumer ${consumer.id} closed due to transport close for ${playerName}`);
+        console.log(`Consumer ${consumer.id} closed due to transport close for ${playerName}`);
         setConsumers((prev) => prev.filter((c) => c.consumer.id !== consumer.id));
         if (audio.parentNode) audio.parentNode.removeChild(audio);
       });
