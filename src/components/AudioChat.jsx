@@ -122,7 +122,7 @@ function AudioChat({ socket, gameId, playerName, game, isAlive, playerId }) {
 
     const updateAudioLevel = () => {
       if (!isMountedRef.current || !isContextActive || !analyserReady) {
-        // console.log(`Audio level update stopped for ${playerName}: mounted=${isMountedRef.current}, active=${isContextActive}, ready=${analyserReady}`);
+        console.log(`Audio level update stopped for ${playerName}: mounted=${isMountedRef.current}, active=${isContextActive}, ready=${analyserReady}`);
         return;
       }
       analyser.getByteFrequencyData(dataArray);
